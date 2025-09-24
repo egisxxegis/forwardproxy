@@ -25,13 +25,8 @@ import socket
 import select
 import stopper
 
-# Proxy options
-proxyPort = 2024
-proxyBinding = "192.168.1.223"
-proxyForwardTo = ("127.0.0.1", 2024)
-proxyAuthentication = (
-    False  # Re-implement authenticate() and verifyUserAccount(), if use!
-)
+_print = print
+print = _print
 
 
 class Authenticate:
@@ -90,8 +85,10 @@ class Authenticate:
 
 class Forward:
 
-    def __init__(self):
-        self.forward = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    def __init__(self, ip):
+        self.forward = socket.socket(
+            socket.AF_INET6 if "::" in ip else socket.AF_INET, socket.SOCK_STREAM
+        )
 
     def start(self, host, port):
         try:
@@ -108,7 +105,17 @@ class Proxy:
     input_list = []
     channel = {}
 
-    def __init__(self, host, port, delay, buffer_size, stopper_delay):
+    def __init__(
+        self,
+        host,
+        port,
+        delay,
+        buffer_size,
+        stopper_delay,
+        proxyAuthentication,
+        proxyForwardTo,
+        proxyBinding,
+    ):
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.server.bind((host, port))
@@ -116,6 +123,9 @@ class Proxy:
         self.delay = delay
         self.buffer_size = buffer_size
         self.stopper_delay = stopper_delay
+        self.proxyAuthentication = proxyAuthentication
+        self.proxyForwardTo = proxyForwardTo
+        self.proxyBinding = proxyBinding
 
     def main_loop(self):
         self.input_list.append(self.server)
@@ -156,14 +166,16 @@ class Proxy:
     def on_accept(self):
         clientsock, clientaddr = self.server.accept()
 
-        authenticated = not proxyAuthentication
+        authenticated = not self.proxyAuthentication
         if not authenticated:
             authenticated = Authenticate().authenticate(clientsock, clientaddr)
         else:
             print("Connecting client", clientaddr, "without authentication")
 
         if authenticated:
-            forward = Forward().start(proxyForwardTo[0], proxyForwardTo[1])
+            forward = Forward(self.proxyForwardTo[0]).start(
+                self.proxyForwardTo[0], self.proxyForwardTo[1]
+            )
             if forward:
                 print("Client", clientaddr, "connected")
                 self.input_list.append(clientsock)
@@ -209,9 +221,23 @@ def launch_proxy(
     proxyForwardTo=("127.0.0.1", 2024),
     proxyAuthentication=False,  # Re-implement authenticate() and verifyUserAccount(), if use!)
     stopper_delay=3,
+    name="",
 ):
+    global print
+    print = lambda *args, **kwargs: _print(
+        (f"[{name}]" if name else "") + str(args[0]), *args[1:], **kwargs
+    )
     print(" * ForwardProxy")
-    proxy = Proxy(proxyBinding, proxyPort, delay, buffer_size, stopper_delay)
+    proxy = Proxy(
+        proxyBinding,
+        proxyPort,
+        delay,
+        buffer_size,
+        stopper_delay,
+        proxyAuthentication,
+        proxyForwardTo,
+        proxyBinding,
+    )
     print(" * Listening on: " + str(proxyBinding) + " : " + str(proxyPort))
     print(
         " * Forwarding to: " + str(proxyForwardTo[0]) + " : " + str(proxyForwardTo[1])
@@ -224,6 +250,10 @@ def launch_proxy(
         proxy.main_loop()
     except (BaseException, RuntimeError):
         print("Stopping server")
+        try:
+            proxy.on_close()
+        except:
+            pass
         sys.exit(1)
 
 
