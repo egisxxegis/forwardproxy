@@ -29,10 +29,13 @@ delay = 0.0001
 buffer_size = 4096
 
 # Proxy options
-proxyPort = 9800
-proxyBinding = '0.0.0.0'
-proxyForwardTo = ('127.0.0.1', 8081)
-proxyAuthentication = False # Re-implement authenticate() and verifyUserAccount(), if use!
+proxyPort = 5173
+proxyBinding = "192.168.1.223"
+proxyForwardTo = ("::1", 5173)
+proxyAuthentication = (
+    False  # Re-implement authenticate() and verifyUserAccount(), if use!
+)
+
 
 class Authenticate:
     #
@@ -53,10 +56,11 @@ class Authenticate:
             print("Client", clientaddr, "authenticated")
 
         return self.authenticated
+
     #
     # TODO Re-implement this method, if you use authentication!
     def verifyUserAccount(self, uname, upass, clientIp):
-        return uname == 'admin' and upass == 'test1234'
+        return uname == "admin" and upass == "test1234"
 
     # Returns the called URI from http-request
     def getHTTPPath(self, client):
@@ -66,30 +70,38 @@ class Authenticate:
             return path
         except Exception as e:
             print(e)
-            return ''
+            return ""
 
     # Extract argument uname from the called URI
     def getUNameFromHTTPPath(self, path):
         try:
-            uname = path[path.rfind('uname=')+6:path.rfind('&upass=')]
+            uname = path[path.rfind("uname=") + 6 : path.rfind("&upass=")]
             return uname
         except Exception as e:
             print(e)
-            return ''
+            return ""
 
     # Extract argument upass from the called URI
     def getUPassFromHTTPPath(self, path):
         try:
-            uid = path[path.rfind('upass=')+6:]
+            uid = path[path.rfind("upass=") + 6 :]
             return uid
         except Exception as e:
             print(e)
-            return ''
+            return ""
+
 
 class Forward:
 
     def __init__(self):
-        self.forward = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # Detect if IPv6 is needed
+        try:
+            socket.inet_pton(socket.AF_INET6, proxyForwardTo[0])
+            af_type = socket.AF_INET6
+        except OSError:
+            af_type = socket.AF_INET
+
+        self.forward = socket.socket(af_type, socket.SOCK_STREAM)
 
     def start(self, host, port):
         try:
@@ -99,6 +111,7 @@ class Forward:
         except Exception as e:
             print(e)
             return False
+
 
 class Proxy:
 
@@ -181,16 +194,19 @@ class Proxy:
         # print data
         self.channel[self.s].send(data)
 
-if __name__ == '__main__':
 
-    print(' * ForwardProxy')
+if __name__ == "__main__":
+
+    print(" * ForwardProxy")
     proxy = Proxy(proxyBinding, proxyPort)
-    print(' * Listening on: ' + str(proxyBinding) + ' : ' + str(proxyPort))
-    print(' * Forwarding to: ' + str(proxyForwardTo[0]) + ' : ' + str(proxyForwardTo[1]))
+    print(" * Listening on: " + str(proxyBinding) + " : " + str(proxyPort))
+    print(
+        " * Forwarding to: " + str(proxyForwardTo[0]) + " : " + str(proxyForwardTo[1])
+    )
     if proxyAuthentication:
-        print(' * Authentication: enabled')
+        print(" * Authentication: enabled")
     else:
-        print(' * Authentication: disabled')
+        print(" * Authentication: disabled")
     try:
         proxy.main_loop()
     except KeyboardInterrupt:
